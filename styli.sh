@@ -155,6 +155,7 @@ reddit() {
             echo "Please install the subreddits file in $CONFDIR"
             exit 2
         fi
+        echo SUBREDDITS: $(cat $CONFDIR/subreddits)
         mapfile -t SUBREDDITS <"$CONFDIR/subreddits"
         a=${#SUBREDDITS[@]}
         b=$((RANDOM % a))
@@ -163,7 +164,9 @@ reddit() {
     fi
 
     URL="https://www.reddit.com/r/$SUB/$SORT/.json?raw_json=1&t=$TOP_TIME"
-    CONTENT=$(wget -T $TIMEOUT -U "$USERAGENT" -q -O - "$URL")
+    echo "URL = $URL"
+    # CONTENT=$(wget -T $TIMEOUT -U "$USERAGENT" -O - "$URL")
+    CONTENT=$(curl -fsSL "$URL")
     mapfile -t URLS <<<"$(echo -n "$CONTENT" | jq -r '.data.children[]|select(.data.post_hint|test("image")?) | .data.preview.images[0].source.url')"
     wait # prevent spawning too many processes
     SIZE=${#URLS[@]}
@@ -180,6 +183,7 @@ reddit() {
     # TARGET_ID=${IDS[$IDX]}
     # EXT=$(echo -n "${TARGET_URL##*.}" | cut -d '?' -f 1)
     # NEWNAME=$(echo "$TARGET_NAME" | sed "s/^\///;s/\// /g")_"$SUBREDDIT"_$TARGET_ID.$EXT
+    echo "TARGET_URL = $TARGET_URL"
     wget -T $TIMEOUT -U "$USERAGENT" --no-check-certificate -q -P down -O "$WALLPAPER" "$TARGET_URL" &>/dev/null
 }
 
@@ -253,6 +257,7 @@ type_check() {
     MIME_TYPES=("image/bmp" "image/jpeg" "image/gif" "image/png" "image/heic")
     ISTYPE=false
 
+    echo "CHECK IMAGE = $WALLPAPER"
     for REQUIREDTYPE in "${MIME_TYPES[@]}"; do
         IMAGETYPE=$(file --mime-type "$WALLPAPER" | awk '{print $2}')
         if [ "$REQUIREDTYPE" = "$IMAGETYPE" ]; then
@@ -262,8 +267,10 @@ type_check() {
     done
 
     if [ $ISTYPE = false ]; then
+        echo "Image type is: $IMAGETYPE"
+        echo "MIME Types allowed: ${MIME_TYPES[@]}"
         echo "MIME-Type missmatch. Downloaded file is not an image!"
-        exit 1
+        return 1
     fi
 }
 
@@ -521,18 +528,49 @@ while :; do
 done
 
 if [ -n "$DIR" ]; then
+    echo "Selecting random wallpaper from $DIR..."
     select_random_wallpaper
+    type_check; ret=$?
+    [ "$ret" -ne 0 ] && echo "Unable to select random wallpaper from $DIR!" && exit 1
 elif [ "$LINK" = "reddit" ] || [ -n "$SUB" ]; then
-    reddit "$SUB"
+    echo "Fetching wallpaper from reddit $SUB..."
+    RETRY_COUNT=0
+    MAX_RETRIES=5
+    SLEEP_INTERVAL=3
+
+    while true; do
+        echo
+        reddit "$SUB"
+        type_check; ret=$?
+        if [ "$ret" -eq 0 ]; then
+            break
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+            echo "Unable to fetch reddit wallpaper after $MAX_RETRIES attempts!"
+            exit 1
+        fi
+        echo "Retrying in $SLEEP_INTERVAL seconds..."
+        sleep "$SLEEP_INTERVAL"
+        SUB=
+    done
 elif [ "$LINK" = "deviantart" ] || [ -n "$ARTIST" ]; then
+    echo "Fetching wallpaper from deviantart $ARTIST..."
     deviantart "$ARTIST"
+    type_check; ret=$?
+    [ "$ret" -ne 0 ] && echo "Unable to fetch wallpaper from deviantart $ARTIST!" && exit 1
 elif [ -n "$SAVE" ]; then
+    echo "Saving current wallpaper $SAVE..."
     save_cmd
+    type_check; ret=$?
+    [ "$ret" -ne 0 ] && echo "Unable to save current wallpaper!" && exit 1
 else
+    echo "Fetching wallpaper from unsplash $LINK..."
     unsplash
+    type_check; ret=$?
+    [ "$ret" -ne 0 ] && echo "Unable to fetch wallpaper from unsplash $LINK!" && exit 1
 fi
 
-type_check
 
 if [ "$KDE" = true ]; then
     kde_cmd
