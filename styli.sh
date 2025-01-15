@@ -589,3 +589,6 @@ else
 fi
 
 pywal_cmd
+
+notify-send --urgency=normal --icon=$WALLPAPER "Setting wallpaper…" "$WALLPAPER"
+
