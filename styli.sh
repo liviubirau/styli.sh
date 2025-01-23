@@ -590,5 +590,6 @@ fi
 
 pywal_cmd
 
-notify-send --urgency=normal --icon=$WALLPAPER "Setting wallpaper…" "$WALLPAPER"
+current_datetime=$(date '+%Y%m%d %H%M%S')
+notify-send --urgency=normal --icon=$WALLPAPER "Setting wallpaper…" "$WALLPAPER\n$current_datetime"
 
